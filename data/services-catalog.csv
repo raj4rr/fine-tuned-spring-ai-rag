@@ -1,0 +1,7 @@
+id,service_name,environment,owner_team,port,status,documentation_url
+SVC-101,Spring Boot API,Production,Backend Core,8080,active,http://localhost:8080/actuator/health
+SVC-102,React Web UI,Production,Frontend Web,5173,active,http://localhost:5173
+SVC-103,PGVector Database,Production,Data Platform,5433,active,postgresql://localhost:5433/ragdb
+SVC-104,Ollama Local Engine,Production,AI Infrastructure,11434,active,http://localhost:11434
+SVC-105,Telemetry Collector,Staging,Observability,4317,standby,http://localhost:4317/metrics
+

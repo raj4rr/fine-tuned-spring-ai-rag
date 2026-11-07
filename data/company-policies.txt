@@ -1,0 +1,15 @@
+Spring AI RAG Demo - Onboarding & Policies Guide
+Last Updated: November 2026
+
+1. Vector Store Dimensions:
+The current database schema in PGVector is configured with 768 vector dimensions. This matches the nomic-embed-text embedding model. If a different embedding model is used in the future (such as all-minilm:384 or text-embedding-3-small:1536), the VECTOR_DIMENSIONS configuration in .env must be updated and the vector schema recreated.
+
+2. Document Ingestion Protocol:
+Documents uploaded via the React frontend or API (/api/rag/file) are automatically converted into document chunks, embedded using nomic-embed-text, and stored in the PostgreSQL vector store table with metadata including the original filename and source tag.
+
+3. Query Processing:
+When a user submits a prompt via /api/chat, QuestionAnswerAdvisor performs an approximate nearest neighbor similarity search against PGVector, injects the top relevant chunks into the prompt context, and streams or returns the generated completion from Ollama.
+
+4. Privacy and Offline Operation:
+All models run locally via Docker and Ollama. No data or prompts are transmitted outside the local machine.
+

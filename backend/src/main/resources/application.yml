@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: spring-ai-rag-demo
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ragdb}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+  ai:
+    model:
+      chat: ollama
+      embedding: ollama
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      chat:
+        model: ${OLLAMA_CHAT_MODEL:qwen2.5:1.5b}
+        temperature: 0.2
+      embedding:
+        model: ${OLLAMA_EMBED_MODEL:nomic-embed-text}
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: ${VECTOR_DIMENSIONS:768}
+        max-document-batch-size: 100
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: 8080
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

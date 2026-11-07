@@ -1,0 +1,5 @@
+# Install a CUDA-compatible PyTorch build first, then:
+unsloth
+trl
+transformers
+datasets
