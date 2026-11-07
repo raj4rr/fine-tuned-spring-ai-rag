@@ -224,7 +224,13 @@ run_backend() {
   load_env
   detect_java
   cd "$ROOT_DIR/backend"
-  mvn spring-boot:run "$@"
+  local JAR_FILE="$ROOT_DIR/backend/target/spring-ai-rag-demo-0.0.1-SNAPSHOT.jar"
+  if [ -f "$JAR_FILE" ]; then
+    log_info "Running packaged jar (-Xmx512m)..."
+    exec java -Xmx512m -jar "$JAR_FILE" "$@"
+  else
+    mvn spring-boot:run "$@"
+  fi
 }
 
 setup_frontend() {
@@ -287,7 +293,12 @@ run_all() {
   trap cleanup INT TERM
 
   log_step "Launching Spring Boot backend..."
-  (cd "$ROOT_DIR/backend" && exec mvn spring-boot:run) &
+  local JAR_FILE="$ROOT_DIR/backend/target/spring-ai-rag-demo-0.0.1-SNAPSHOT.jar"
+  if [ -f "$JAR_FILE" ]; then
+    (cd "$ROOT_DIR/backend" && exec java -Xmx512m -jar "$JAR_FILE") &
+  else
+    (cd "$ROOT_DIR/backend" && exec mvn spring-boot:run) &
+  fi
   BACKEND_PID=$!
 
   log_step "Launching React frontend..."
