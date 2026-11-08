@@ -194,6 +194,43 @@ function App() {
     }
   }
 
+// Trigger fine-tuning process
+  async function processLoraFineTuning() {
+    if (!selectedDataset) {
+      setFtResult({ success: false, message: 'Please select or upload a dataset file first.' });
+      return;
+    }
+    setFtProcessing(true);
+    setFtResult(null);
+
+    try {
+      const res = await fetch(`${API}/api/lorafinetune/loraprocess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          datasetFile: selectedDataset,
+          modelName: ftModelName,
+          baseModel: ftBaseModel,
+          temperature: 0.1
+        })
+      });
+      const data = await res.json();
+      setFtResult(data);
+
+      if (data.success) {
+        await loadModels();
+        setSelectedModel(data.modelName);
+      }
+    } catch (err) {
+      setFtResult({
+        success: false,
+        message: 'Fine-tuning process failed to connect to backend: ' + err.message,
+        logs: err.stack
+      });
+    } finally {
+      setFtProcessing(false);
+    }
+  }
   return (
     <div className="app">
       <header>
@@ -301,6 +338,20 @@ function App() {
                   )}
                 </button>
               </div>
+              <div className="process-action">
+                              <button
+                                type="button"
+                                className="btn-accent process-btn"
+                                onClick={processLoraFineTuning}
+                                disabled={ftProcessing}
+                              >
+                                {ftProcessing ? (
+                                  <span className="spinner-text">⏳ Processing LoRa/QLoRa Fine-Tuning…</span>
+                                ) : (
+                                  '⚡ Process Via LoRA/QLoRA & Build Fine-Tuned Model'
+                                )}
+                              </button>
+               </div>
             </div>
 
             {/* Step 3: Result Message (Success / Failed) */}
