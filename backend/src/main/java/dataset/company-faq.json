@@ -1,0 +1,38 @@
+{
+  "company": "TechCorp Solutions",
+  "product": "CloudScale AI Platform",
+  "version": "4.2.0",
+  "release_date": "2026-10-15",
+  "sla": {
+    "standard_uptime": "99.95%",
+    "support_response_time_p1": "15 minutes",
+    "support_response_time_p2": "2 hours"
+  },
+  "modules": [
+    {
+      "name": "Knowledge Retrieval Service",
+      "engine": "Spring AI 2.0 + PGVector",
+      "vector_dimensions": 768,
+      "embedding_model": "nomic-embed-text",
+      "supported_document_types": ["txt", "md", "json", "csv"]
+    },
+    {
+      "name": "Inference Gateway",
+      "engine": "Ollama Local Service",
+      "primary_model": "qwen2.5:1.5b",
+      "context_window": 8192,
+      "max_tokens_per_response": 2048
+    }
+  ],
+  "faq": [
+    {
+      "question": "How do I index a new document into CloudScale AI?",
+      "answer": "Upload the document using the UI Knowledge base section or send a POST request with multipart form-data to http://localhost:8080/api/rag/file."
+    },
+    {
+      "question": "Where is company data stored?",
+      "answer": "All documents and vector embeddings are stored locally in the self-hosted PostgreSQL PGVector database on port 5433 (ragdb) and never transmitted to external cloud providers."
+    }
+  ]
+}
+
