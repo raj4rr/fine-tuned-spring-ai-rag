@@ -1,6 +1,0 @@
-transformers
-peft
-trl
-datasets
-accelerate
-mlx-lm
