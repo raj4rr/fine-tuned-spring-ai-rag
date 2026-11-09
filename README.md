@@ -1,37 +1,115 @@
-# Spring AI + Ollama + RAG + React
+# Spring AI + Ollama + RAG + React + Fine-Tuning Studio
 
 Production-oriented starter implementing:
 
-React UI → Spring Boot 4 → Spring AI 2.0.2 → Ollama → RAG → PostgreSQL/PGVector
+React UI → Spring Boot 4 → Spring AI 2.0.2 → Ollama → RAG (PGVector) + GUI Fine-Tuning
+
+---
+
+## Architecture Overview
+
+```text
+React Web UI (Port 5173)
+  │
+  ├── [Chat Prompt / Test Bench]
+  │     │
+  │     ▼
+  │   Spring Boot 4 API (Port 8080)
+  │     ├── ChatController & RAG Orchestration
+  │     │     ├── PGVector VectorStore (Port 5433) ──> Hybrid Similarity Search
+  │     │     └── Ollama Local Inference (Port 11434) ──> qwen2.5:1.5b / Custom Models
+  │     │
+  │     └── FineTuningController & FineTuningService
+  │           ├── Dataset Storage ──> fine-tune/dataset/*.jsonl
+  │           ├── Modelfile Generation ──> fine-tuning/output/<model>/Modelfile
+  │           └── Ollama API Engine ──> Automatic Model Compilation & Registration
+  │
+  └── [Dataset Ingestion & Management]
+```
+
+- **Fine-Tuning = Behavior, Terminology & Domain Personas**
+- **RAG = Dynamic, Grounded & Live Knowledge Retrieval**
+- **Spring AI = Enterprise Orchestration & Guardrails**
+- **Ollama = Local GPU/CPU Model Inference**
+- **PostgreSQL / PGVector = Semantic Dense Vector Search**
+
+---
 
 ## Requirements
-- JDK 21+
-- Maven 3.9+
-- Docker + Docker Compose
-- Node.js 20+
 
-## 1. Start infrastructure
+- **JDK 21+** (e.g. OpenJDK 21/27)
+- **Maven 3.9+**
+- **Docker & Docker Compose**
+- **Node.js 20+** & **npm**
+
+---
+
+## Quickstart with `run.sh`
+
+A unified runner script [`run.sh`](run.sh) is provided to manage infrastructure, models, backend, and frontend automatically.
+
+```bash
+# Start full application (Postgres + Ollama + Model Checks + Spring Boot + React)
+./run.sh
+```
+
+### CLI Subcommands
+
+```bash
+# Start only Docker infrastructure and pull required Ollama models
+./run.sh infra
+
+# Start only the Spring Boot backend
+./run.sh backend
+
+# Start only the React frontend
+./run.sh frontend
+
+# Pull or verify required Ollama models
+./run.sh models
+
+# Check status of containers, Ollama models, and health endpoints
+./run.sh status
+
+# Stop all Docker containers
+./run.sh stop
+
+# Restart infrastructure and services
+./run.sh restart
+
+# Show help & environment variables
+./run.sh help
+```
+
+---
+
+## Manual Step-by-Step Setup
+
+If you prefer starting each service manually:
+
+### 1. Start Infrastructure (Docker)
 
 ```bash
 docker compose up -d
-
-docker exec -it spring-ai-rag-demo-ollama-1 ollama pull qwen2.5:7b
-docker exec -it spring-ai-rag-demo-ollama-1 ollama pull nomic-embed-text
 ```
 
-Container names can differ; use `docker compose exec ollama ollama pull ...` if preferred.
+Pull the default chat and embedding models in Ollama:
+```bash
+docker compose exec -T ollama ollama pull qwen2.5:1.5b
+docker compose exec -T ollama ollama pull nomic-embed-text
+```
 
-## 2. Start backend
+### 2. Start Backend (Spring Boot 4)
 
 ```bash
 cd backend
 mvn spring-boot:run
 ```
 
-Backend: http://localhost:8080
-Health: http://localhost:8080/actuator/health
+- **Backend API**: `http://localhost:8080`
+- **Actuator Health**: `http://localhost:8080/actuator/health`
 
-## 3. Start React
+### 3. Start Frontend (React + Vite)
 
 ```bash
 cd frontend
@@ -39,118 +117,105 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL, normally http://localhost:5173.
+- **Web UI**: `http://localhost:5173`
 
-## 4. Use RAG
+---
 
-Upload a `.txt`, `.md`, `.json` or `.csv` file from the UI. Spring AI creates embeddings through Ollama and stores them in PGVector.
+## Features & Usage
 
-Then ask questions. `QuestionAnswerAdvisor` performs vector similarity retrieval and injects the retrieved context into the LLM prompt.
+### 1. Fine-Tuning via GUI
 
-## API
+1. Open **`http://localhost:5173`**.
+2. Under **Fine-Tuning Operations**:
+   - **Upload Dataset**: Choose a training dataset file (`.jsonl`, `.json`, `.csv`, `.txt`) and click **Submit File**. The file is stored in `fine-tune/dataset/`.
+   - **Configure Model**: Select your dataset file, target model name (e.g. `spring-ai-expert`), and base model (`qwen2.5:1.5b`).
+   - **Process**: Click **⚡ Process & Build Fine-Tuned Model**.
+3. View the **Success** or **Failed** banner with expandable build logs. Once compiled, the new model is automatically registered in Ollama and selected in the test bench.
 
-### Chat
-POST `/api/chat`
+### 2. Interactive Test Bench & Clickable Test Prompts
+
+On the same page (**Interactive Test Bench**):
+- **Model Switcher**: Select between default (`qwen2.5:1.5b`), fine-tuned models (`spring-ai-expert`), or other installed models.
+- **RAG Context Toggle**: Toggle RAG retrieval ON or OFF to test pure fine-tuned weights vs. RAG-augmented knowledge.
+- **Clickable Test Prompts**: Click one of the quick test chips:
+  - 💬 `What is r4r?`
+  - 💬 `What is Spring AI?`
+  - 💬 `When should I use RAG instead of fine-tuning?`
+  - 💬 `What is the role of Ollama in a Spring AI application?`
+  - 💬 `Explain dependency injection in Spring Boot.`
+  - 💬 `What is the recommended architecture for an enterprise Spring AI RAG application?`
+  - 💬 `Where is company data stored and what is the SLA?`
+
+### 3. Knowledge Base Ingestion (PGVector)
+
+Upload markdown (`.md`), text (`.txt`), JSON (`.json`), or CSV (`.csv`) files from the **Knowledge Base Ingestion** card. Spring AI embeds the content using `nomic-embed-text` and stores it into PostgreSQL PGVector on port `5433`.
+
+Pre-built sample datasets are available in [`data/`](data/):
+- [`data/spring-ai-architecture.md`](data/spring-ai-architecture.md)
+- [`data/company-faq.json`](data/company-faq.json)
+- [`data/services-catalog.csv`](data/services-catalog.csv)
+- [`data/company-policies.txt`](data/company-policies.txt)
+
+---
+
+## API Reference
+
+### Chat Endpoint
+**`POST /api/chat`**
 ```json
-{"message":"What does our knowledge base say about Spring AI?"}
+{
+  "message": "What is r4r?",
+  "model": "spring-ai-expert",
+  "enableRag": true
+}
 ```
-
-### Index text
-POST `/api/rag/text`
+Response:
 ```json
-{"source":"spring-ai-notes","text":"Spring AI integrates LLMs, vector stores and tools into Spring applications."}
+{
+  "answer": "Educational articles covering web fundamentals like HTML, CSS, JavaScript, and backend logic with PHP.",
+  "modelUsed": "spring-ai-expert",
+  "ragEnabled": true
+}
 ```
 
-### Upload
-POST `/api/rag/file` multipart field `file`.
+### Fine-Tuning Endpoints
+- **`GET /api/finetune/files`**: Lists dataset files in `fine-tune/dataset/`.
+- **`POST /api/finetune/upload`**: Multipart file upload (`file`) to `fine-tune/dataset/`.
+- **`POST /api/finetune/process`**: Compiles model into Ollama.
+  ```json
+  {
+    "datasetFile": "spring-ai-1.jsonl",
+    "modelName": "spring-ai-expert",
+    "baseModel": "qwen2.5:1.5b",
+    "temperature": 0.1
+  }
+  ```
+- **`GET /api/finetune/models`**: Lists installed Ollama models available for inference.
 
-## Configuration
+### RAG Document Ingestion
+- **`POST /api/rag/file`**: Multipart form upload (`file`) to embed and store in PGVector.
+- **`POST /api/rag/text`**: Ingest raw text with metadata.
+  ```json
+  {
+    "source": "manual-entry",
+    "text": "Enterprise guidelines and instructions..."
+  }
+  ```
 
-The backend defaults to:
-- Chat model: `qwen2.5:7b`
-- Embedding model: `nomic-embed-text`
-- Ollama: `http://localhost:11434`
-- PostgreSQL: `localhost:5432/ragdb`
-- PGVector dimensions: `768`
+---
 
-If your embedding model produces a different vector size, change `VECTOR_DIMENSIONS` to match it before initializing the schema.
+## Configuration & Ports
 
-## Fine-tuned model
+Configured via [`.env`](.env) (or environment variables):
 
-After Unsloth produces a GGUF model, load it into Ollama and change:
-
-```yaml
-spring:
-  ai:
-    ollama:
-      chat:
-        model: my-finetuned-model
-```
-
-The RAG pipeline remains unchanged. This is the intended separation:
-
-**Fine-tuning = behavior**
-
-**RAG = current/domain knowledge**
-
-**Spring AI = orchestration**
-
-**Ollama = local inference**
-
-## 5. Add Unsloth fine-tuning
-
-The project now includes `fine-tuning/` with a QLoRA training script and a small
-Spring AI-oriented instruction dataset.
-
-```bash
-cd fine-tuning
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-# Install the PyTorch build matching your NVIDIA CUDA environment first.
-pip install -r requirements.txt
-python train.py
-```
-
-The training script produces a LoRA adapter and a GGUF quantized model. Copy the
-GGUF to `ollama/` and create the local Ollama model:
-
-```bash
-cd ../ollama
-ollama create spring-ai-expert -f Modelfile
-ollama run spring-ai-expert
-```
-
-Then set:
-
-```bash
-export OLLAMA_CHAT_MODEL=spring-ai-expert
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:OLLAMA_CHAT_MODEL="spring-ai-expert"
-```
-
-Restart Spring Boot. React continues to call `/api/chat`; the backend now uses
-the fine-tuned Ollama model while RAG continues to retrieve context from PGVector.
-
-### Final architecture
-
-```text
-React
-  |
-  v
-Spring Boot 4 + Spring AI
-  |              |
-  |              +---- PGVector RAG ----> domain documents
-  |
-  +---- Ollama ----> fine-tuned QLoRA/GGUF model
-```
-
-**Fine-tuning = behavior**  
-**RAG = knowledge**  
-**Ollama = local inference**  
-**Spring AI = orchestration**  
-**Spring Boot = security + business logic**
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5433` | Host port mapped to PostgreSQL container |
+| `DB_NAME` | `ragdb` | PostgreSQL database name |
+| `DB_USER` | `postgres` | PostgreSQL username |
+| `DB_PASSWORD` | `postgres` | PostgreSQL password |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama engine API URL |
+| `OLLAMA_CHAT_MODEL` | `qwen2.5:1.5b` | Default chat model |
+| `OLLAMA_EMBED_MODEL`| `nomic-embed-text` | Dense embedding model |
+| `VECTOR_DIMENSIONS` | `768` | Embedding vector dimensions |
