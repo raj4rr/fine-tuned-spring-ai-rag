@@ -45,6 +45,16 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+## Datasets
+
+The dataset folder [`fine-tuning/dataset/`](dataset/) contains ready-to-use instruction datasets:
+- **`spring-ai-1000.jsonl`**: Comprehensive 1,000-sample enterprise dataset covering Spring AI, ChatClient, RAG, PGVector, Ollama, LoRA/QLoRA, and Java 21.
+- **`spring-ai.jsonl`**: Compact 6-sample baseline dataset.
+- **`generate_dataset_1000.py`**: Python script to regenerate or customize the 1,000-sample dataset:
+  ```bash
+  python generate_dataset_1000.py
+  ```
+
 ## Train
 
 From this directory:
