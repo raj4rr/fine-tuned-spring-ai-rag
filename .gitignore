@@ -1,2 +1,7 @@
 # Project exclude paths
 /backend/target/
+target/
+.venv/
+**/.venv/
+.DS_Store
+**/.DS_Store

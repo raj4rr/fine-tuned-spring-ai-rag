@@ -23,18 +23,17 @@ Unsloth + QLoRA
 
 ## Requirements
 
-- NVIDIA GPU with a compatible CUDA/PyTorch installation
 - Python 3.10+
-- A CUDA-compatible PyTorch build
-- Unsloth, TRL, Transformers, Datasets
+- The project uses a single shared root virtual environment at the project root (`./.venv`)
 
-Install the dependencies:
+Activate the root environment:
 
 ```bash
-python -m venv .venv
+# From project root:
 source .venv/bin/activate
-pip install --upgrade pip
-# Install the PyTorch build appropriate for your CUDA version first.
+
+# Or from inside fine-tuning/:
+source ../.venv/bin/activate
 pip install -r requirements.txt
 ```
 

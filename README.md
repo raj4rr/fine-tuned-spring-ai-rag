@@ -20,7 +20,7 @@ React Web UI (Port 5173)
   │     │     └── Ollama Local Inference (Port 11434) ──> qwen2.5:1.5b / Custom Models
   │     │
   │     └── FineTuningController & FineTuningService
-  │           ├── Dataset Storage ──> fine-tune/dataset/*.jsonl
+  │           ├── Dataset Storage ──> fine-tuning/dataset/*.jsonl
   │           ├── Modelfile Generation ──> fine-tuning/output/<model>/Modelfile
   │           └── Ollama API Engine ──> Automatic Model Compilation & Registration
   │
@@ -123,14 +123,20 @@ npm run dev
 
 ## Features & Usage
 
-### 1. Fine-Tuning via GUI
+### 1. Fine-Tuning via GUI with Dynamic Live Log Streaming
 
 1. Open **`http://localhost:5173`**.
 2. Under **Fine-Tuning Operations**:
-   - **Upload Dataset**: Choose a training dataset file (`.jsonl`, `.json`, `.csv`, `.txt`) and click **Submit File**. The file is stored in `fine-tune/dataset/`.
+   - **Upload Dataset**: Choose a training dataset file (`.jsonl`, `.json`, `.csv`, `.txt`) and click **Submit File**. The file is stored in `fine-tuning/dataset/`.
    - **Configure Model**: Select your dataset file, target model name (e.g. `spring-ai-expert`), and base model (`qwen2.5:1.5b`).
-   - **Process**: Click **⚡ Process & Build Fine-Tuned Model**.
-3. View the **Success** or **Failed** banner with expandable build logs. Once compiled, the new model is automatically registered in Ollama and selected in the test bench.
+   - **Process**:
+     - Click **⚡ Process & Build Fine-Tuned Model** for instruction tuning into Ollama, or
+     - Click **⚡ Process Via LoRA/QLoRA & Build Fine-Tuned Model** for true PyTorch/Unsloth parameter-efficient fine-tuning.
+3. **Live Fine-Tuning Console**:
+   - Watch the live log stream in real time via Server-Sent Events (SSE).
+   - Track progress across dataset parsing (`[STAGE]`), parameters (`[INFO]`), Ollama layer creation (`[OLLAMA]`), or Python training steps (`[PYTHON]`).
+   - Use the **Auto-Scroll**, **Copy Logs**, and **Clear** controls directly in the console.
+4. Once completed, the new model is automatically registered in Ollama and selected in the test bench on the right.
 
 ### 2. Interactive Test Bench & Clickable Test Prompts
 
@@ -179,17 +185,11 @@ Response:
 ```
 
 ### Fine-Tuning Endpoints
-- **`GET /api/finetune/files`**: Lists dataset files in `fine-tune/dataset/`.
-- **`POST /api/finetune/upload`**: Multipart file upload (`file`) to `fine-tune/dataset/`.
-- **`POST /api/finetune/process`**: Compiles model into Ollama.
-  ```json
-  {
-    "datasetFile": "spring-ai-1.jsonl",
-    "modelName": "spring-ai-expert",
-    "baseModel": "qwen2.5:1.5b",
-    "temperature": 0.1
-  }
-  ```
+- **`GET /api/finetune/files`**: Lists dataset files in `fine-tuning/dataset/`.
+- **`POST /api/finetune/upload`**: Multipart file upload (`file`) to `fine-tuning/dataset/`.
+- **`POST /api/finetune/process-stream`**: Real-time SSE streaming fine-tuning pipeline for Ollama model creation.
+- **`POST /api/lorafinetune/loraprocess-stream`**: Real-time SSE streaming for Python LoRA / QLoRA training.
+- **`POST /api/finetune/process`**: Synchronous compilation of model into Ollama.
 - **`GET /api/finetune/models`**: Lists installed Ollama models available for inference.
 
 ### RAG Document Ingestion

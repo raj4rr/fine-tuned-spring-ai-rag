@@ -343,6 +343,207 @@ button:disabled {
   margin-top: 6px;
 }
 
+/* Dynamic Live Fine-Tuning Console */
+.dynamic-console {
+  margin-top: 18px;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  font-size: 11px;
+}
+
+.console-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.console-icon {
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.console-title {
+  color: #f1f5f9;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.console-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.console-status.running {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.console-status.success {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.console-status.error {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+  animation: pulse-glow 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.85); }
+}
+
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.console-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.console-btn.active {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.console-body {
+  padding: 12px 14px;
+  min-height: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+.console-placeholder {
+  color: #64748b;
+  font-style: italic;
+}
+
+.console-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  word-break: break-word;
+  margin-bottom: 3px;
+}
+
+.console-ts {
+  color: #475569;
+  user-select: none;
+  flex-shrink: 0;
+  font-size: 10.5px;
+}
+
+.console-tag {
+  font-weight: 700;
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+.console-tag.STAGE {
+  background: #312e81;
+  color: #c7d2fe;
+}
+
+.console-tag.INFO {
+  background: #0c4a6e;
+  color: #7dd3fc;
+}
+
+.console-tag.OLLAMA {
+  background: #78350f;
+  color: #fde68a;
+}
+
+.console-tag.PYTHON {
+  background: #134e4a;
+  color: #99f6e4;
+}
+
+.console-tag.SUCCESS {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+
+.console-tag.ERROR {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.console-tag.WARN {
+  background: #713f12;
+  color: #fde047;
+}
+
+.console-msg {
+  flex: 1;
+}
+
+.console-cursor {
+  display: inline-block;
+  color: #38bdf8;
+  animation: cursor-blink 1s infinite steps(1);
+  margin-left: 4px;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* Chat Card & Test Prompts */
 .chat-card {
   display: flex;

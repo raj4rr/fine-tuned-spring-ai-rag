@@ -10,6 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -49,10 +50,6 @@ public class FineTuningService {
 
     Path datasetDir = projectRoot.resolve("fine-tuning").resolve("dataset");
     if (!Files.exists(datasetDir)) {
-      Path altDir = projectRoot.resolve("fine-tune").resolve("dataset");
-      if (Files.exists(altDir)) {
-        return altDir;
-      }
       try {
         Files.createDirectories(datasetDir);
       } catch (IOException e) {
@@ -126,12 +123,40 @@ public class FineTuningService {
       }
     } catch (Exception ignored) {}
 
-    return new UploadResponse(cleanName, Files.size(targetPath), samples, "File uploaded successfully to fine-tune/dataset/" + cleanName);
+    return new UploadResponse(cleanName, Files.size(targetPath), samples, "File uploaded successfully to fine-tuning/dataset/" + cleanName);
+  }
+
+  public record FineTuneStreamEvent(
+      String type,
+      String level,
+      String timestamp,
+      String message,
+      Boolean success,
+      String modelName,
+      Integer sampleCount
+  ) {}
+
+  public record DomainPair(String userPrompt, String assistantResponse) {}
+  public record DatasetFileInfo(String name, long size, String lastModified, int sampleCount) {}
+  public record UploadResponse(String fileName, long size, int sampleCount, String message) {}
+  public record FineTuneRequest(String datasetFile, String modelName, String baseModel, Double temperature) {}
+  public record FineTuneResult(boolean success, String modelName, String message, String logs, int sampleCount) {}
+
+  private static String nowFormatted() {
+    return java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
   }
 
   public FineTuneResult processFineTuning(FineTuneRequest request) {
+    return processFineTuningStream(request, evt -> {
+      if ("log".equals(evt.type())) {
+        log.info("[FineTune] [{}] {}", evt.level(), evt.message());
+      }
+    });
+  }
+
+  public FineTuneResult processFineTuningStream(FineTuneRequest request, java.util.function.Consumer<FineTuneStreamEvent> emitter) {
     StringBuilder logs = new StringBuilder();
-    logs.append(String.format("Starting fine-tuning process at %s\n", Instant.now()));
+    emitter.accept(new FineTuneStreamEvent("log", "STAGE", nowFormatted(), "🚀 Initializing fine-tuning pipeline...", null, null, null));
 
     String datasetFilename = request.datasetFile();
     if (datasetFilename == null || datasetFilename.isBlank()) {
@@ -149,9 +174,17 @@ public class FineTuningService {
 
     Path datasetPath = getDatasetDirectory().resolve(datasetFilename);
     if (!Files.exists(datasetPath)) {
-      logs.append(String.format("ERROR: Dataset file '%s' not found in %s\n", datasetFilename, getDatasetDirectory()));
-      return new FineTuneResult(false, targetModel, "Dataset file not found: " + datasetFilename, logs.toString(), 0);
+      String err = String.format("Dataset file '%s' not found in %s", datasetFilename, getDatasetDirectory());
+      logs.append("ERROR: ").append(err).append("\n");
+      emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), err, false, targetModel, 0));
+      emitter.accept(new FineTuneStreamEvent("error", "ERROR", nowFormatted(), err, false, targetModel, 0));
+      return new FineTuneResult(false, targetModel, err, logs.toString(), 0);
     }
+
+    emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(), "📁 Dataset file: " + datasetPath.toAbsolutePath(), null, null, null));
+    emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(), "🎯 Target model name: " + targetModel, null, null, null));
+    emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(), "🧱 Base model: " + baseModel, null, null, null));
+    emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(), String.format("🌡️ Temperature: %.2f", temperature), null, null, null));
 
     logs.append(String.format("Using dataset: %s\n", datasetPath.toAbsolutePath()));
     logs.append(String.format("Target model: %s\n", targetModel));
@@ -159,6 +192,7 @@ public class FineTuningService {
     logs.append(String.format("Temperature: %.2f\n", temperature));
 
     // Parse training dataset samples
+    emitter.accept(new FineTuneStreamEvent("log", "STAGE", nowFormatted(), "📖 Parsing instruction samples from dataset...", null, null, null));
     List<DomainPair> pairs = new ArrayList<>();
     int sampleCount = 0;
 
@@ -184,9 +218,13 @@ public class FineTuningService {
             }
             if (!userPrompt.isBlank() && !assistantResponse.isBlank()) {
               pairs.add(new DomainPair(userPrompt, assistantResponse));
+              emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(),
+                  String.format("  • Sample #%d parsed: \"%s\"", sampleCount, truncate(userPrompt, 60)), null, null, null));
             }
           } else if (node.has("prompt") && node.has("response")) {
             pairs.add(new DomainPair(node.get("prompt").asText(), node.get("response").asText()));
+            emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(),
+                String.format("  • Sample #%d parsed: \"%s\"", sampleCount, truncate(node.get("prompt").asText(), 60)), null, null, null));
           } else {
             pairs.add(new DomainPair(line, ""));
           }
@@ -195,13 +233,19 @@ public class FineTuningService {
         }
       }
     } catch (IOException e) {
-      logs.append(String.format("ERROR reading dataset: %s\n", e.getMessage()));
-      return new FineTuneResult(false, targetModel, "Failed to read dataset: " + e.getMessage(), logs.toString(), 0);
+      String err = "Failed to read dataset: " + e.getMessage();
+      logs.append("ERROR: ").append(err).append("\n");
+      emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), err, false, targetModel, 0));
+      emitter.accept(new FineTuneStreamEvent("error", "ERROR", nowFormatted(), err, false, targetModel, 0));
+      return new FineTuneResult(false, targetModel, err, logs.toString(), 0);
     }
 
-    logs.append(String.format("Parsed %d instruction samples from %s\n", sampleCount, datasetFilename));
+    String summaryMsg = String.format("✅ Parsed %d instruction samples successfully from %s", sampleCount, datasetFilename);
+    logs.append(summaryMsg).append("\n");
+    emitter.accept(new FineTuneStreamEvent("log", "STAGE", nowFormatted(), summaryMsg, null, null, null));
 
     // Build specialized System Instructions with domain definitions and rules
+    emitter.accept(new FineTuneStreamEvent("log", "STAGE", nowFormatted(), "📝 Compiling domain instructions into Modelfile...", null, null, null));
     StringBuilder systemPrompt = new StringBuilder();
     systemPrompt.append("You are a specialized enterprise AI expert assistant fine-tuned on custom domain instructions.\n");
     systemPrompt.append("You have been trained on specific domain knowledge and definitions that you must prioritize.\n\n");
@@ -235,91 +279,97 @@ public class FineTuningService {
           baseModel, temperature, systemPrompt.toString().replace("\"\"\"", "\\\"\\\"\\\"")
       );
       Files.writeString(modelfile, modelfileContent, StandardCharsets.UTF_8);
-      logs.append(String.format("Generated Modelfile saved to %s\n", modelfile.toAbsolutePath()));
+      String savedMsg = String.format("Generated Modelfile saved to %s", modelfile.toAbsolutePath());
+      logs.append(savedMsg).append("\n");
+      emitter.accept(new FineTuneStreamEvent("log", "INFO", nowFormatted(), savedMsg, null, null, null));
     } catch (Exception e) {
-      logs.append(String.format("Warning: could not save local Modelfile: %s\n", e.getMessage()));
+      String warnMsg = "Warning: could not save local Modelfile: " + e.getMessage();
+      logs.append(warnMsg).append("\n");
+      emitter.accept(new FineTuneStreamEvent("log", "WARN", nowFormatted(), warnMsg, null, null, null));
     }
 
-    // Call Ollama API to compile and register the model
+    // Call Ollama API to compile and register the model with real-time stream
+    emitter.accept(new FineTuneStreamEvent("log", "STAGE", nowFormatted(),
+        String.format("⚡ Invoking Ollama compiler at %s/api/create (streaming)...", ollamaBaseUrl), null, null, null));
     logs.append(String.format("Invoking Ollama API at %s/api/create...\n", ollamaBaseUrl));
+
     try {
       Map<String, Object> payload = new HashMap<>();
       payload.put("model", targetModel);
       payload.put("from", baseModel);
       payload.put("system", systemPrompt.toString());
       payload.put("parameters", Map.of("temperature", temperature));
-      payload.put("stream", false);
+      payload.put("stream", true);
 
       String jsonPayload = objectMapper.writeValueAsString(payload);
 
       HttpRequest httpReq = HttpRequest.newBuilder()
           .uri(URI.create(ollamaBaseUrl + "/api/create"))
           .header("Content-Type", "application/json")
-          .timeout(Duration.ofMinutes(5))
+          .timeout(Duration.ofMinutes(15))
           .POST(HttpRequest.BodyPublishers.ofString(jsonPayload, StandardCharsets.UTF_8))
           .build();
 
-      HttpResponse<String> response = httpClient.send(httpReq, HttpResponse.BodyHandlers.ofString());
+      HttpResponse<java.io.InputStream> response = httpClient.send(httpReq, HttpResponse.BodyHandlers.ofInputStream());
 
       if (response.statusCode() >= 200 && response.statusCode() < 300) {
         boolean success = false;
         String errorMessage = null;
-        for (String line : response.body().split("\n")) {
-          line = line.trim();
-          if (line.isEmpty()) continue;
-          try {
-            JsonNode node = objectMapper.readTree(line);
-            if (node.has("status")) {
-              String status = node.get("status").asText();
-              logs.append(String.format("Status: %s\n", status));
-              if ("success".equalsIgnoreCase(status)) {
-                success = true;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+          String line;
+          while ((line = reader.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            try {
+              JsonNode node = objectMapper.readTree(line);
+              if (node.has("status")) {
+                String status = node.get("status").asText();
+                logs.append("Status: ").append(status).append("\n");
+                emitter.accept(new FineTuneStreamEvent("log", "OLLAMA", nowFormatted(), status, null, null, null));
+                if ("success".equalsIgnoreCase(status)) {
+                  success = true;
+                }
               }
+              if (node.has("error")) {
+                errorMessage = node.get("error").asText();
+                logs.append("Error: ").append(errorMessage).append("\n");
+                emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), errorMessage, null, null, null));
+              }
+            } catch (Exception parseEx) {
+              logs.append(line).append("\n");
+              emitter.accept(new FineTuneStreamEvent("log", "OLLAMA", nowFormatted(), line, null, null, null));
             }
-            if (node.has("error")) {
-              errorMessage = node.get("error").asText();
-              logs.append(String.format("Error: %s\n", errorMessage));
-            }
-          } catch (Exception ignored) {}
+          }
         }
 
         if (success || errorMessage == null) {
-          logs.append(String.format("Model '%s' compiled and registered in Ollama successfully.\n", targetModel));
-          return new FineTuneResult(
-              true,
-              targetModel,
-              String.format("Fine-tuning completed successfully! Model '%s' is ready in Ollama.", targetModel),
-              logs.toString(),
-              sampleCount
-          );
+          String doneMsg = String.format("Fine-tuning completed successfully! Model '%s' is ready in Ollama.", targetModel);
+          logs.append(doneMsg).append("\n");
+          emitter.accept(new FineTuneStreamEvent("log", "SUCCESS", nowFormatted(), "🎉 " + doneMsg, true, targetModel, sampleCount));
+          emitter.accept(new FineTuneStreamEvent("complete", "SUCCESS", nowFormatted(), doneMsg, true, targetModel, sampleCount));
+          return new FineTuneResult(true, targetModel, doneMsg, logs.toString(), sampleCount);
         } else {
-          return new FineTuneResult(
-              false,
-              targetModel,
-              "Ollama model compilation failed: " + errorMessage,
-              logs.toString(),
-              sampleCount
-          );
+          String failMsg = "Ollama model compilation failed: " + errorMessage;
+          logs.append(failMsg).append("\n");
+          emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), "❌ " + failMsg, false, targetModel, sampleCount));
+          emitter.accept(new FineTuneStreamEvent("error", "ERROR", nowFormatted(), failMsg, false, targetModel, sampleCount));
+          return new FineTuneResult(false, targetModel, failMsg, logs.toString(), sampleCount);
         }
       } else {
-        logs.append(String.format("Ollama API error: HTTP %d - %s\n", response.statusCode(), response.body()));
-        return new FineTuneResult(
-            false,
-            targetModel,
-            "Ollama creation failed: HTTP " + response.statusCode() + " - " + response.body(),
-            logs.toString(),
-            sampleCount
-        );
+        String errBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+        String httpErr = String.format("Ollama API error: HTTP %d - %s", response.statusCode(), errBody);
+        logs.append(httpErr).append("\n");
+        emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), httpErr, false, targetModel, sampleCount));
+        emitter.accept(new FineTuneStreamEvent("error", "ERROR", nowFormatted(), httpErr, false, targetModel, sampleCount));
+        return new FineTuneResult(false, targetModel, httpErr, logs.toString(), sampleCount);
       }
     } catch (Exception e) {
-      logs.append(String.format("Exception calling Ollama: %s\n", e.getMessage()));
-      return new FineTuneResult(
-          false,
-          targetModel,
-          "Failed to communicate with Ollama: " + e.getMessage(),
-          logs.toString(),
-          sampleCount
-      );
+      String commErr = "Failed to communicate with Ollama: " + e.getMessage();
+      logs.append(commErr).append("\n");
+      emitter.accept(new FineTuneStreamEvent("log", "ERROR", nowFormatted(), commErr, false, targetModel, sampleCount));
+      emitter.accept(new FineTuneStreamEvent("error", "ERROR", nowFormatted(), commErr, false, targetModel, sampleCount));
+      return new FineTuneResult(false, targetModel, commErr, logs.toString(), sampleCount);
     }
   }
 
@@ -354,9 +404,8 @@ public class FineTuningService {
     return models;
   }
 
-  public record DomainPair(String userPrompt, String assistantResponse) {}
-  public record DatasetFileInfo(String name, long size, String lastModified, int sampleCount) {}
-  public record UploadResponse(String fileName, long size, int sampleCount, String message) {}
-  public record FineTuneRequest(String datasetFile, String modelName, String baseModel, Double temperature) {}
-  public record FineTuneResult(boolean success, String modelName, String message, String logs, int sampleCount) {}
+  private static String truncate(String text, int maxLength) {
+    if (text == null) return "";
+    return text.length() <= maxLength ? text : text.substring(0, maxLength) + "…";
+  }
 }

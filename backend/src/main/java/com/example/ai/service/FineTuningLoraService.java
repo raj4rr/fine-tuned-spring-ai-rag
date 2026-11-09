@@ -18,60 +18,93 @@ import java.util.stream.Stream;
 
 @Service
 public class FineTuningLoraService {
-    private static final Logger log = LoggerFactory.getLogger(FineTuningService.class);
+    private static final Logger log = LoggerFactory.getLogger(FineTuningLoraService.class);
 
-    // Keep your getDatasetDirectory() and getOutputDirectory() methods from before
+    private static String nowFormatted() {
+        return java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+    }
 
     public FineTuneResult processFineTuning(FineTuneRequest request) {
+        return processFineTuningStream(request, evt -> {
+            if ("log".equals(evt.type())) {
+                log.info("[LoRA FineTune] [{}] {}", evt.level(), evt.message());
+            }
+        });
+    }
+
+    public FineTuneResult processFineTuningStream(FineTuneRequest request, java.util.function.Consumer<FineTuningService.FineTuneStreamEvent> emitter) {
         StringBuilder logs = new StringBuilder();
-        logs.append(String.format("Starting true QLoRA fine-tuning via Python at %s\n", Instant.now()));
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "STAGE", nowFormatted(), "🚀 Initializing LoRA / QLoRA training pipeline...", null, null, null));
 
         Path datasetPath = getDatasetDirectory().resolve(request.datasetFile());
         Path outputPath = getOutputDirectory().resolve(request.modelName());
         Path ggufPath = outputPath.resolve("gguf");
 
+        Path current = Paths.get(".").toAbsolutePath().normalize();
+        Path projectRoot = current.endsWith("backend") ? current.getParent() : current;
+        Path venvPython = projectRoot.resolve(".venv").resolve("bin").resolve("python3");
+        String pythonCmd = Files.isExecutable(venvPython) ? venvPython.toAbsolutePath().toString() : "python3";
+
+        Path scriptPath = projectRoot.resolve("fine-tuning").resolve("trainmac.py");
+        if (!Files.exists(scriptPath)) {
+            scriptPath = projectRoot.resolve("fine-tuning").resolve("train.py");
+        }
+
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "INFO", nowFormatted(), "🐍 Python Interpreter: " + pythonCmd, null, null, null));
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "INFO", nowFormatted(), "📜 Training Script: " + scriptPath.toAbsolutePath(), null, null, null));
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "INFO", nowFormatted(), "📁 Dataset: " + datasetPath.toAbsolutePath(), null, null, null));
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "INFO", nowFormatted(), "🎯 Target Model: " + request.modelName(), null, null, null));
+        emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "STAGE", nowFormatted(), "⚡ Launching Python process...", null, null, null));
+
         try {
             // 1. Prepare environment and execution command
-            // Assuming your python script is saved as 'train.py' in your project root
             ProcessBuilder pb = new ProcessBuilder(
-                    "python3", "/Users/rajesh/Desktop/spring-ai-rag-demo/backend/src/main/java/trainmac.py",
+                    pythonCmd, scriptPath.toAbsolutePath().toString(),
                     "--dataset", datasetPath.toAbsolutePath().toString(),
                     "--output", outputPath.toAbsolutePath().toString(),
                     "--gguf", ggufPath.toAbsolutePath().toString()
             );
 
             pb.redirectErrorStream(true);
-            logs.append("Executing Unsloth QLoRA script on CUDA machine...\n");
-
             Process process = pb.start();
 
-            // 2. Stream Python training logs back to Java in real-time
+            // 2. Stream Python training logs back in real-time
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     logs.append(line).append("\n");
-                    log.info("[Python Train] {}", line); // Print to Java logs
+                    log.info("[Python Train] {}", line);
+                    emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "PYTHON", nowFormatted(), line, null, null, null));
                 }
             }
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                return new FineTuneResult(false, request.modelName(), "Python training failed.", logs.toString(), 0);
+                String failMsg = "Python training failed with exit code: " + exitCode;
+                emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "ERROR", nowFormatted(), "❌ " + failMsg, false, request.modelName(), 0));
+                emitter.accept(new FineTuningService.FineTuneStreamEvent("error", "ERROR", nowFormatted(), failMsg, false, request.modelName(), 0));
+                return new FineTuneResult(false, request.modelName(), failMsg, logs.toString(), 0);
             }
 
             // 3. Register the compiled GGUF file into Ollama natively
-            logs.append("Training successful! Registering GGUF with Ollama...\n");
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "STAGE", nowFormatted(), "📦 Training successful! Registering GGUF with Ollama...", null, null, null));
             Path modelfilePath = outputPath.resolve("Modelfile");
             String modelfileContent = String.format("FROM %s\n", ggufPath.resolve("unsloth.Q4_K_M.gguf").toAbsolutePath());
             Files.writeString(modelfilePath, modelfileContent);
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "INFO", nowFormatted(), "Created Modelfile at " + modelfilePath.toAbsolutePath(), null, null, null));
 
-            // Call your existing Ollama API '/api/create' block here, pointing to this Modelfile
-            return new FineTuneResult(true, request.modelName(), "True QLoRA Fine-tuning completed!", logs.toString(), 0);
+            String doneMsg = "True LoRA / QLoRA Fine-tuning completed successfully!";
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "SUCCESS", nowFormatted(), "🎉 " + doneMsg, true, request.modelName(), 0));
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("complete", "SUCCESS", nowFormatted(), doneMsg, true, request.modelName(), 0));
+            return new FineTuneResult(true, request.modelName(), doneMsg, logs.toString(), 0);
 
         } catch (Exception e) {
-            logs.append("Exception during execution: ").append(e.getMessage());
-            return new FineTuneResult(false, request.modelName(), "Execution failed: " + e.getMessage(), logs.toString(), 0);
+            String exMsg = "Exception during execution: " + e.getMessage();
+            logs.append(exMsg);
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("log", "ERROR", nowFormatted(), "❌ " + exMsg, false, request.modelName(), 0));
+            emitter.accept(new FineTuningService.FineTuneStreamEvent("error", "ERROR", nowFormatted(), exMsg, false, request.modelName(), 0));
+            return new FineTuneResult(false, request.modelName(), exMsg, logs.toString(), 0);
         }
     }
 
@@ -91,10 +124,6 @@ public class FineTuningLoraService {
 
         Path datasetDir = projectRoot.resolve("fine-tuning").resolve("dataset");
         if (!Files.exists(datasetDir)) {
-            Path altDir = projectRoot.resolve("fine-tune").resolve("dataset");
-            if (Files.exists(altDir)) {
-                return altDir;
-            }
             try {
                 Files.createDirectories(datasetDir);
             } catch (IOException e) {

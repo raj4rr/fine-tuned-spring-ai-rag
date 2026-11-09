@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
@@ -40,6 +40,19 @@ function App() {
   const [ftProcessing, setFtProcessing] = useState(false);
   const [ftResult, setFtResult] = useState(null);
   const [showLogs, setShowLogs] = useState(false);
+
+  // Dynamic fine-tuning logs state
+  const [ftLogs, setFtLogs] = useState([]);
+  const [ftLogStatus, setFtLogStatus] = useState('idle'); // 'idle' | 'running' | 'success' | 'error'
+  const [autoScrollLogs, setAutoScrollLogs] = useState(true);
+  const logsEndRef = useRef(null);
+
+  // Auto-scroll dynamic console
+  useEffect(() => {
+    if (autoScrollLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [ftLogs, autoScrollLogs]);
 
   // Load models and dataset files on mount
   useEffect(() => {
@@ -134,10 +147,10 @@ function App() {
     }
   }
 
-  // Upload dataset file to fine-tune/dataset/
+  // Upload dataset file to fine-tuning/dataset/
   async function uploadFineTuneFile() {
     if (!ftFile) return;
-    setFtUploadStatus('Uploading dataset file to fine-tune/dataset/…');
+    setFtUploadStatus('Uploading dataset file to fine-tuning/dataset/…');
     const f = new FormData();
     f.append('file', ftFile);
     try {
@@ -156,17 +169,27 @@ function App() {
     }
   }
 
-  // Trigger fine-tuning process
-  async function processFineTuning() {
+  // Reusable dynamic fine-tuning stream handler
+  async function runFineTuningStream(endpoint, isLora = false) {
     if (!selectedDataset) {
       setFtResult({ success: false, message: 'Please select or upload a dataset file first.' });
       return;
     }
     setFtProcessing(true);
     setFtResult(null);
+    setFtLogStatus('running');
+
+    const startTime = new Date().toLocaleTimeString();
+    setFtLogs([
+      {
+        timestamp: startTime,
+        level: 'STAGE',
+        message: `🚀 Initiating ${isLora ? 'LoRA / QLoRA' : 'instruction'} fine-tuning pipeline...`
+      }
+    ]);
 
     try {
-      const res = await fetch(`${API}/api/finetune/process`, {
+      const res = await fetch(`${API}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -176,61 +199,83 @@ function App() {
           temperature: 0.1
         })
       });
-      const data = await res.json();
-      setFtResult(data);
 
-      if (data.success) {
-        await loadModels();
-        setSelectedModel(data.modelName);
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep partial trailing line
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('data:')) {
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            try {
+              const evt = JSON.parse(jsonStr);
+              if (evt.type === 'log') {
+                setFtLogs(prev => [...prev, {
+                  timestamp: evt.timestamp || new Date().toLocaleTimeString(),
+                  level: evt.level || 'INFO',
+                  message: evt.message || ''
+                }]);
+              } else if (evt.type === 'complete') {
+                setFtLogStatus('success');
+                setFtResult({
+                  success: true,
+                  modelName: evt.modelName || ftModelName,
+                  message: evt.message || 'Model ready in Ollama.'
+                });
+                await loadModels();
+                if (evt.modelName) {
+                  setSelectedModel(evt.modelName);
+                }
+              } else if (evt.type === 'error') {
+                setFtLogStatus('error');
+                setFtResult({
+                  success: false,
+                  modelName: evt.modelName || ftModelName,
+                  message: evt.message || 'Fine-tuning failed.'
+                });
+              }
+            } catch (parseErr) {
+              setFtLogs(prev => [...prev, {
+                timestamp: new Date().toLocaleTimeString(),
+                level: 'INFO',
+                message: jsonStr
+              }]);
+            }
+          }
+        }
       }
     } catch (err) {
+      setFtLogStatus('error');
+      setFtLogs(prev => [...prev, {
+        timestamp: new Date().toLocaleTimeString(),
+        level: 'ERROR',
+        message: 'Connection or execution error: ' + err.message
+      }]);
       setFtResult({
         success: false,
-        message: 'Fine-tuning process failed to connect to backend: ' + err.message,
-        logs: err.stack
+        message: 'Fine-tuning execution failed: ' + err.message
       });
     } finally {
       setFtProcessing(false);
     }
   }
 
-// Trigger fine-tuning process
-  async function processLoraFineTuning() {
-    if (!selectedDataset) {
-      setFtResult({ success: false, message: 'Please select or upload a dataset file first.' });
-      return;
-    }
-    setFtProcessing(true);
-    setFtResult(null);
-
-    try {
-      const res = await fetch(`${API}/api/lorafinetune/loraprocess`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          datasetFile: selectedDataset,
-          modelName: ftModelName,
-          baseModel: ftBaseModel,
-          temperature: 0.1
-        })
-      });
-      const data = await res.json();
-      setFtResult(data);
-
-      if (data.success) {
-        await loadModels();
-        setSelectedModel(data.modelName);
-      }
-    } catch (err) {
-      setFtResult({
-        success: false,
-        message: 'Fine-tuning process failed to connect to backend: ' + err.message,
-        logs: err.stack
-      });
-    } finally {
-      setFtProcessing(false);
-    }
-  }
+  const processFineTuning = () => runFineTuningStream('/api/finetune/process-stream', false);
+  const processLoraFineTuning = () => runFineTuningStream('/api/lorafinetune/loraprocess-stream', true);
   return (
     <div className="app">
       <header>
@@ -254,7 +299,7 @@ function App() {
               <div className="card-tag">FINE-TUNING OPERATIONS</div>
               <h2>Fine-Tune via GUI</h2>
             </div>
-            <p>Upload training datasets to <code>fine-tune/dataset/</code> and process them into custom Ollama models.</p>
+            <p>Upload training datasets to <code>fine-tuning/dataset/</code> and process them into custom Ollama models.</p>
 
             {/* Step 1: Upload File */}
             <div className="section-block">
@@ -354,28 +399,96 @@ function App() {
                </div>
             </div>
 
-            {/* Step 3: Result Message (Success / Failed) */}
+            {/* Permanent Dynamic Live Console on GUI */}
+            <div className="dynamic-console">
+              <div className="console-header">
+                <div className="console-title-group">
+                  <span className="console-icon">&gt;_</span>
+                  <span className="console-title">Live Fine-Tuning Console</span>
+                  <span className={`console-status ${ftLogStatus}`}>
+                    {ftLogStatus === 'running' && <><span className="pulse-dot"></span> STREAMING</>}
+                    {ftLogStatus === 'success' && <>✓ COMPLETED</>}
+                    {ftLogStatus === 'error' && <>✗ FAILED</>}
+                    {ftLogStatus === 'idle' && <>STANDBY</>}
+                  </span>
+                </div>
+                <div className="console-actions">
+                  <button
+                    type="button"
+                    className={`console-btn ${autoScrollLogs ? 'active' : ''}`}
+                    onClick={() => setAutoScrollLogs(!autoScrollLogs)}
+                    title="Toggle auto-scrolling"
+                  >
+                    {autoScrollLogs ? 'Auto-Scroll: ON' : 'Auto-Scroll: OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    className="console-btn"
+                    onClick={() => {
+                      const text = ftLogs.length > 0
+                        ? ftLogs.map(l => `[${l.timestamp}] [${l.level}] ${l.message}`).join('\n')
+                        : 'No logs captured yet.';
+                      navigator.clipboard.writeText(text);
+                    }}
+                    title="Copy console logs"
+                  >
+                    📋 Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="console-btn"
+                    onClick={() => {
+                      setFtLogs([]);
+                      setFtLogStatus('idle');
+                    }}
+                    title="Clear console"
+                  >
+                    🗑️ Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="console-body">
+                {ftLogs.length === 0 && (
+                  <div className="console-line console-placeholder">
+                    <span className="console-ts">[{new Date().toLocaleTimeString()}]</span>
+                    <span className="console-tag INFO">READY</span>
+                    <span className="console-msg">
+                      Live console active. Click &quot;Process &amp; Build Fine-Tuned Model&quot; or &quot;Process Via LoRA/QLoRA&quot; to stream real-time compiler and training logs here.
+                    </span>
+                  </div>
+                )}
+                {ftLogs.map((log, idx) => (
+                  <div key={idx} className="console-line">
+                    <span className="console-ts">[{log.timestamp}]</span>
+                    <span className={`console-tag ${log.level}`}>{log.level}</span>
+                    <span className="console-msg">{log.message}</span>
+                  </div>
+                ))}
+                {ftProcessing && (
+                  <div className="console-line">
+                    <span className="console-ts">[{new Date().toLocaleTimeString()}]</span>
+                    <span className="console-tag STAGE">RUNNING</span>
+                    <span className="console-msg">
+                      Engine processing in progress...
+                      <span className="console-cursor">▋</span>
+                    </span>
+                  </div>
+                )}
+                <div ref={logsEndRef} />
+              </div>
+            </div>
+
+            {/* Step 3: Result Banner (Success / Failed) */}
             {ftResult && (
               <div className={`result-banner ${ftResult.success ? 'banner-success' : 'banner-error'}`}>
                 <div className="banner-title">
                   {ftResult.success ? '✅ SUCCESS: Model Ready' : '❌ FAILED: Processing Error'}
                 </div>
                 <div className="banner-content">{ftResult.message}</div>
-                {ftResult.logs && (
-                  <div className="logs-container">
-                    <button
-                      type="button"
-                      className="btn-link"
-                      onClick={() => setShowLogs(!showLogs)}
-                    >
-                      {showLogs ? 'Hide Processing Logs ▲' : 'Show Processing Logs ▼'}
-                    </button>
-                    {showLogs && <pre className="logs-pre">{ftResult.logs}</pre>}
-                  </div>
-                )}
                 {ftResult.success && (
                   <div className="banner-tip">
-                    👉 Model <strong>{ftResult.modelName}</strong> is now compiled and ready for testing!
+                    👉 Model <strong>{ftResult.modelName}</strong> is ready and selected in the Chatbot on the right!
                   </div>
                 )}
               </div>
